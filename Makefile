@@ -1,7 +1,7 @@
 PREFIX ?= $(HOME)/.local
 BINDIR  = $(PREFIX)/bin
 
-.PHONY: all install fmt clean
+.PHONY: all install fmt lint clean
 
 all: install
 
@@ -11,6 +11,9 @@ install:
 
 fmt:
 	black nag.py
+
+lint:
+	ruff check nag.py
 
 clean:
 	rm -rf .venv
