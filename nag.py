@@ -74,10 +74,75 @@ DEFAULT_META = {
 }
 
 
+def _clean_title(title, match, line, block_end):
+    """Strip string-literal quotes and block-comment endings from a title."""
+    start = match.start()
+    if start > 0 and line[start - 1] == '"' and '"' in title:
+        title = title[: title.index('"')].strip()
+
+    if block_end and block_end in title:
+        title = title[: title.index(block_end)].strip()
+
+    return title
+
+
+def _collect_block_body(lines, start, block_end):
+    """Collect continuation lines from a block comment until block_end."""
+    extra = []
+    j = start
+    while j < len(lines):
+        if block_end in lines[j]:
+            content = lines[j].split(block_end)[0].strip()
+            if content:
+                extra.append(content)
+            break
+        extra.append(lines[j].rstrip())
+        j += 1
+    return extra
+
+
+def _parse_meta(meta_str):
+    parts = [p.strip() for p in meta_str.split(",") if p.strip()]
+    priority = next((p for p in parts if p in PRIORITIES), None)
+    tags = [p for p in parts if p not in PRIORITIES]
+    return priority, tags
+
+
+def _match_todo(line):
+    """Match a TODO comment in a line.
+
+    Returns (match, meta_str, priority, tags, title_raw, old_token) or None.
+    Already-tagged TODOs return (None, existing_id, None, [], "", "").
+    """
+    m = TODO_TAGGED_META.search(line)
+    if m:
+        return None, m.group(1), None, [], "", ""
+
+    m = TODO_TAGGED.search(line)
+    if m:
+        return None, m.group(1), None, [], "", ""
+
+    m = TODO_BARE_META.search(line)
+    if m:
+        meta_str = m.group(1)
+        priority, tags = _parse_meta(meta_str)
+        return m, meta_str, priority, tags, m.group(2), "TODO" + f"<{meta_str}>:"
+
+    m = TODO_BARE.search(line)
+    if m:
+        return m, None, None, [], m.group(1), "TODO" + ":"
+
+    return None
+
+
 class Nag:
     def __init__(self):
         self.s = []
         self.root = ""
+        self.m = None
+        self.attachments = None
+        self.notes = None
+        self.meta = None
         self.t = {
             "new": self.new,
             "save": self.save,
@@ -100,8 +165,7 @@ class Nag:
             "sync": self.sync,
             "clear": self.clear,
         }
-        self.m = {}
-        self._reset_meta()
+        self.reset_meta()
 
     def _generate_id(self):
         """Generate a unique 4-char issue ID"""
@@ -110,14 +174,117 @@ class Nag:
             if not self.root or not os.path.exists(self.root + "/todo/" + candidate):
                 return candidate
 
-    def _reset_meta(self):
+    def reset_meta(self):
         self.meta = copy.deepcopy(DEFAULT_META)
         self.meta["id"] = self._generate_id()
+        self.s = []
         self.notes = []
         self.attachments = []
+        self.m = {}
+
+    def _filter_eq(self, field, value, valid=None):
+        if valid is not None and value not in valid:
+            print(f"{field} must be one of: {', '.join(valid)}")
+            exit(1)
+        self.m = {k: v for k, v in self.m.items() if v[field] == value}
+
+    def _filter_contains(self, field, value):
+        self.m = {k: v for k, v in self.m.items() if value in v[field]}
+
+    def _scan_files(self):
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+            for filename in filenames:
+                ext = os.path.splitext(filename)[1]
+                if ext in LANGUAGES:
+                    yield os.path.join(dirpath, filename), LANGUAGES[ext]
+
+    def _process_file(self, filepath, lang_info, source_ids):
+        with open(filepath, "r", errors="replace") as f:
+            lines = f.readlines()
+
+        block_end = lang_info.get("block_end")
+        modified = False
+        i = 0
+
+        while i < len(lines):
+            result = _match_todo(lines[i])
+            if result is None:
+                i += 1
+                continue
+
+            m, meta_str, priority, tags, title_raw, old_token = result
+            if m is None:
+                source_ids.add(meta_str)
+                i += 1
+                continue
+            title = _clean_title(title_raw.strip(), m, lines[i], block_end)
+
+            extra_lines = []
+            if block_end and block_end not in title_raw and block_end not in lines[i]:
+                extra_lines = _collect_block_body(lines, i + 1, block_end)
+
+            new_id = str(uuid.uuid4())[:4]
+            new_token = (
+                f"TODO({new_id})<{meta_str}>:" if meta_str else f"TODO({new_id}):"
+            )
+            lines[i] = lines[i].replace(old_token, new_token, 1)
+            source_ids.add(new_id)
+            modified = True
+
+            rel_path = os.path.relpath(filepath, self.root)
+            self._create_issue_from_sync(
+                new_id,
+                title,
+                extra_lines,
+                f"{rel_path}:{i + 1}",
+                priority=priority,
+                tags=tags,
+            )
+            print(f"created TODO({new_id}): {title}")
+
+            i += 1
+
+        if modified:
+            with open(filepath, "w") as f:
+                f.writelines(lines)
+
+    def _create_issue_from_sync(
+        self, issue_id, title, extra_lines, source, priority=None, tags=None
+    ):
+        issue_dir = os.path.join(self.root, "todo", issue_id)
+        if os.path.exists(issue_dir):
+            return
+
+        os.makedirs(issue_dir)
+        os.makedirs(os.path.join(issue_dir, "attachments"))
+
+        now = str(datetime.datetime.now())
+        m = {
+            "id": issue_id,
+            "title": title,
+            "status": "open",
+            "priority": priority or "low",
+            "tags": tags or [],
+            "created_at": now,
+            "updated_at": now,
+            "source": source,
+            "depends": [],
+            "blocks": [],
+        }
+        with open(os.path.join(issue_dir, "meta.json"), "w") as f:
+            f.write(json.dumps(m))
+
+        body = "\n".join(extra_lines)
+        with open(os.path.join(issue_dir, "body.md"), "w") as f:
+            f.write(body)
 
     def init(self):
         """Initializes the Nag tool"""
+        if len(self.s) != 0:
+            print("call init with no args")
+            exit(1)
+
         # TODO: warn if a parent nag project already exists
         path = os.path.join(os.getcwd(), "todo")
         if os.path.exists(path):
@@ -203,15 +370,6 @@ class Nag:
         if DEBUG:
             print("fetched:", self.m)
 
-    def _filter_eq(self, field, value, valid=None):
-        if valid and value not in valid:
-            print(f"{field} must be one of: {', '.join(valid)}")
-            exit(1)
-        self.m = {k: v for k, v in self.m.items() if v[field] == value}
-
-    def _filter_contains(self, field, value):
-        self.m = {k: v for k, v in self.m.items() if value in v[field]}
-
     def filter(self):
         """Filter loaded issues by a predicate string
 
@@ -256,7 +414,9 @@ class Nag:
 
         nag all show
         """
-        # generated with ChatGPT
+        if len(self.s) != 0:
+            print("call show with no args")
+            exit(1)
 
         def fmt_date(s):
             if not s:
@@ -294,6 +454,9 @@ class Nag:
 
         nag all graph
         """
+        if len(self.s) != 0:
+            print("call graph with no args")
+            exit(1)
         issues = self.m
         if not issues:
             print("no todos")
@@ -313,7 +476,9 @@ class Nag:
 
         # Tree printing adapted from:
         # https://simonhessner.de/python-3-recursively-print-structured-tree-including-hierarchy-markers-using-depth-first-search/
-        def print_tree(id, visited, level_markers=[]):
+        def print_tree(id, visited, level_markers=None):
+            if level_markers is None:
+                level_markers = []
             prefix = "".join("│   " if draw else "    " for draw in level_markers[:-1])
 
             if level_markers:
@@ -386,6 +551,9 @@ class Nag:
             with open(meta_path, "r") as f:
                 m = json.load(f)
 
+            if not m.get("source"):
+                continue
+
             if m.get("status") != "orphaned":
                 m["status"] = "orphaned"
                 m["updated_at"] = str(datetime.datetime.now())
@@ -393,157 +561,15 @@ class Nag:
                     f.write(json.dumps(m))
                 print(f"orphaned TODO({issue_id}): {m['title']}")
 
-    def _parse_meta(self, meta_str):
-        parts = [p.strip() for p in meta_str.split(",") if p.strip()]
-        priority = next((p for p in parts if p in PRIORITIES), None)
-        tags = [p for p in parts if p not in PRIORITIES]
-        return priority, tags
-
-    def _match_todo(self, line):
-        """Match a TODO comment in a line.
-
-        Returns (match, meta_str, priority, tags, title_raw, old_token) or None.
-        Already-tagged TODOs return (None, existing_id, None, [], "", "").
-        """
-        m = TODO_TAGGED_META.search(line)
-        if m:
-            return None, m.group(1), None, [], "", ""
-
-        m = TODO_TAGGED.search(line)
-        if m:
-            return None, m.group(1), None, [], "", ""
-
-        m = TODO_BARE_META.search(line)
-        if m:
-            meta_str = m.group(1)
-            priority, tags = self._parse_meta(meta_str)
-            return m, meta_str, priority, tags, m.group(2), "TODO" + f"<{meta_str}>:"
-
-        m = TODO_BARE.search(line)
-        if m:
-            return m, None, None, [], m.group(1), "TODO" + ":"
-
-        return None
-
-    def _clean_title(self, title, match, line, block_end):
-        """Strip string-literal quotes and block-comment endings from a title."""
-        start = match.start()
-        if start > 0 and line[start - 1] == '"' and '"' in title:
-            title = title[: title.index('"')].strip()
-
-        if block_end and block_end in title:
-            title = title[: title.index(block_end)].strip()
-
-        return title
-
-    def _collect_block_body(self, lines, start, block_end):
-        """Collect continuation lines from a block comment until block_end."""
-        extra = []
-        j = start
-        while j < len(lines):
-            if block_end in lines[j]:
-                content = lines[j].split(block_end)[0].strip()
-                if content:
-                    extra.append(content)
-                break
-            extra.append(lines[j].rstrip())
-            j += 1
-        return extra
-
-    def _scan_files(self):
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
-            for filename in filenames:
-                ext = os.path.splitext(filename)[1]
-                if ext in LANGUAGES:
-                    yield os.path.join(dirpath, filename), LANGUAGES[ext]
-
-    def _process_file(self, filepath, lang_info, source_ids):
-        with open(filepath, "r", errors="replace") as f:
-            lines = f.readlines()
-
-        block_end = lang_info.get("block_end")
-        modified = False
-        i = 0
-
-        while i < len(lines):
-            result = self._match_todo(lines[i])
-            if result is None:
-                i += 1
-                continue
-
-            m, meta_str, priority, tags, title_raw, old_token = result
-            if m is None:
-                source_ids.add(meta_str)
-                i += 1
-                continue
-            title = self._clean_title(title_raw.strip(), m, lines[i], block_end)
-
-            extra_lines = []
-            if block_end and block_end not in title_raw and block_end not in lines[i]:
-                extra_lines = self._collect_block_body(lines, i + 1, block_end)
-
-            new_id = str(uuid.uuid4())[:4]
-            new_token = (
-                f"TODO({new_id})<{meta_str}>:" if meta_str else f"TODO({new_id}):"
-            )
-            lines[i] = lines[i].replace(old_token, new_token, 1)
-            source_ids.add(new_id)
-            modified = True
-
-            rel_path = os.path.relpath(filepath, self.root)
-            self._create_issue_from_sync(
-                new_id,
-                title,
-                extra_lines,
-                f"{rel_path}:{i + 1}",
-                priority=priority,
-                tags=tags,
-            )
-            print(f"created TODO({new_id}): {title}")
-
-            i += 1
-
-        if modified:
-            with open(filepath, "w") as f:
-                f.writelines(lines)
-
-    def _create_issue_from_sync(
-        self, issue_id, title, extra_lines, source, priority=None, tags=None
-    ):
-        issue_dir = os.path.join(self.root, "todo", issue_id)
-        if os.path.exists(issue_dir):
-            return
-
-        os.makedirs(issue_dir)
-        os.makedirs(os.path.join(issue_dir, "attachments"))
-
-        now = str(datetime.datetime.now())
-        m = {
-            "id": issue_id,
-            "title": title,
-            "status": "open",
-            "priority": priority or "low",
-            "tags": tags or [],
-            "created_at": now,
-            "updated_at": now,
-            "source": source,
-            "depends": [],
-            "blocks": [],
-        }
-        with open(os.path.join(issue_dir, "meta.json"), "w") as f:
-            f.write(json.dumps(m))
-
-        body = "\n".join(extra_lines)
-        with open(os.path.join(issue_dir, "body.md"), "w") as f:
-            f.write(body)
-
     def close(self):
         """Set status to resolved and save
 
         nag "<id>" fetch close
         nag "fix the lexer" new close
         """
+        if len(self.s) != 0:
+            print("call close with no args")
+            exit(1)
         if not self.m:
             self.m = {self.meta["id"]: self.meta}
 
@@ -575,20 +601,35 @@ class Nag:
 
         nag all "status:open" filter "priority:high" filter show
         """
+        if len(self.s) != 0:
+            print("call all with no args")
+            exit(1)
         for id in os.listdir(self.root + "/todo"):
             path = self.root + "/todo/" + id
-            with open(path + "/meta.json") as f:
+            meta_path = path + "/meta.json"
+            if not os.path.isfile(meta_path):
+                continue
+            with open(meta_path) as f:
                 meta = json.load(f)
-                self.m[id] = meta
-                if DEBUG:
-                    print(meta)
+            self.m[id] = meta
+            if DEBUG:
+                print(meta)
 
     def ls(self):
         """List all issue IDs
 
         nag ls
         """
-        entries = os.listdir(self.root + "/todo")
+        if len(self.s) != 0:
+            print("call ls with no args")
+            exit(1)
+
+        entries = [
+            e
+            for e in os.listdir(self.root + "/todo")
+            if os.path.isfile(os.path.join(self.root, "todo", e, "meta.json"))
+        ]
+
         for id in entries:
             print(id)
 
@@ -655,7 +696,8 @@ class Nag:
         if DEBUG:
             print("notes:", self.notes)
 
-    def find_root(self):
+    @staticmethod
+    def find_root():
         """Walk up from current dir to find todo"""
         path = os.path.abspath(os.getcwd())
 
@@ -675,22 +717,18 @@ class Nag:
 
         nag "fix the lexer" new "codegen" tag
         """
-        while True:
-            if len(self.s) == 0:
-                print("call tag with no args")
-                exit(1)
+        if len(self.s) == 0:
+            print("call tag with no args")
+            exit(1)
 
-            tag = self.s.pop()
+        tag = self.s.pop()
 
-            if not isinstance(tag, str):
-                print("tag must be str")
-                exit(1)
+        if not isinstance(tag, str):
+            print("tag must be str")
+            exit(1)
 
-            if tag not in self.meta["tags"]:
-                self.meta["tags"].append(tag)
-
-            if len(self.s) == 0 or self.s[0] != "tag":
-                break
+        if tag not in self.meta["tags"]:
+            self.meta["tags"].append(tag)
 
         if DEBUG:
             print("tags:", self.meta["tags"])
@@ -735,7 +773,6 @@ class Nag:
             exit(1)
 
         self.meta["title"] = title
-        self.meta["status"] = "open"
 
         if DEBUG:
             print("title:", self.meta["title"])
@@ -745,6 +782,14 @@ class Nag:
 
         nag "fix the lexer" new save
         """
+        if len(self.s) != 0:
+            print("call save with no args")
+            exit(1)
+
+        if not self.meta.get("title"):
+            print("title must not be empty")
+            exit(1)
+
         path = self.root + "/todo/" + self.meta["id"]
         if not os.path.exists(path):
             os.makedirs(path)
@@ -777,6 +822,10 @@ class Nag:
         nag "<id>" fetch clear
         nag all clear
         """
+        if len(self.s) != 0:
+            print("call clear with no args")
+            exit(1)
+
         if not self.m:
             print("no issues loaded")
             exit(1)
@@ -794,18 +843,19 @@ class Nag:
                     idx = int(lineno) - 1
                     line = lines[idx] if 0 <= idx < len(lines) else ""
                     m = TODO_TAGGED_META.search(line)
+
                     if m and m.group(1) == issue_id:
                         old = "TODO" + f"({issue_id})<{m.group(2)}>:"
                         repl = "TODO" + f"<{m.group(2)}>:"
+                        lines[idx] = line.replace(old, repl, 1)
+
+                        with open(filepath, "w") as f:
+                            f.writelines(lines)
                     elif ("TODO" + f"({issue_id}):") in line:
                         old = "TODO" + f"({issue_id}):"
                         repl = "TODO" + ":"
-                    else:
-                        old = None
-                        repl = ""
-
-                    if old:
                         lines[idx] = line.replace(old, repl, 1)
+
                         with open(filepath, "w") as f:
                             f.writelines(lines)
 
@@ -818,8 +868,8 @@ class Nag:
 
 def split_pipelines(tokens):
     pipelines, current = [], []
-    for token in tokens:
-        parts = token.split("+")
+    for t in tokens:
+        parts = t.split("+")
         for i, part in enumerate(parts):
             if part:
                 current.append(part)
@@ -864,10 +914,6 @@ if __name__ == "__main__":
                     print("Sort token:", token)
                 n.s.append(token[len("sort:") :])
                 n.t["sort"]()
-            elif ":" in token and token[: token.index(":")] in DEFAULT_META:
-                if DEBUG:
-                    print("Append token:", token)
-                n.s.append(token)
             else:
                 n.s.append(token)
 
@@ -875,5 +921,4 @@ if __name__ == "__main__":
             print("unknown command:", *n.s)
             exit(1)
 
-        n._reset_meta()
-        n.s.clear()
+        n.reset_meta()
