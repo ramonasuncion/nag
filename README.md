@@ -13,25 +13,25 @@ The language is super basic. There are quote literals and keywords that push and
 
 ## Keywords
 
-| Keyword    | Description                                   |
-| ---------- | --------------------------------------------- |
-| `new`      | Create a new issue object                     |
-| `tag`      | Add a tag                                     |
-| `priority` | Set priority (`low`, `medium`, `high`)        |
-| `save`     | Write changes to disk                         |
-| `ls`       | Push all issue IDs from `todo/`               |
-| `all`      | Push all fully loaded issue objects           |
-| `fetch`    | Load a single issue by ID                     |
-| `filter`   | Filter list by predicate string               |
-| `sort`     | Sort list by field name                       |
-| `show`     | Print issue list                              |
-| `graph`    | Print ASCII dependency DAG                    |
-| `status`   | Set issue status                              |
-| `note`     | Append text to `body.md`                      |
-| `attach`   | Copy a file into `attachments/`               |
-| `depends`  | Add a dependency                              |
-| `close`    | Set status to resolved and save               |
-| `sync`     | Scan source files, assign IDs, detect orphans |
+| Keyword        | Description                                   |
+| -------------- | --------------------------------------------- |
+| `new`          | Create a new issue object                     |
+| `tag`          | Add a tag                                     |
+| `priority`     | Set priority (`low`, `medium`, `high`)        |
+| `save`         | Write changes to disk                         |
+| `ls`           | Push all issue IDs from `todo/`               |
+| `all`          | Push all fully loaded issue objects           |
+| `fetch`        | Load a single issue by ID                     |
+| `filter`       | Filter list by predicate string               |
+| `sort:<field>` | Sort list by field name                       |
+| `show`         | Print issue list                              |
+| `graph`        | Print ASCII dependency DAG                    |
+| `status`       | Set issue status                              |
+| `note`         | Append text to `body.md`                      |
+| `attach`       | Copy a file into `attachments/`               |
+| `depends`      | Add a dependency                              |
+| `close`        | Set status to resolved and save               |
+| `sync`         | Scan source files, assign IDs, detect orphans |
 
 ## Examples
 

@@ -8,7 +8,7 @@ import json
 import shutil
 import copy
 
-DEBUG = True
+DEBUG = False
 
 IGNORED_DIRS = {".git", "todo", "_build", "_opam"}
 
@@ -29,12 +29,17 @@ Commands:
   ls        nag ls
   all       nag all
   filter    nag all "<field:value>" filter
-  sort      nag all "<field>" sort
+  sort      nag all sort:<field>
   show      nag all show
   graph     nag all graph
   sync      nag sync
   help      nag help
 """
+
+ORDINAL = {
+    "priority": {"low": 0, "medium": 1, "high": 2},
+    "status": {"open": 0, "resolved": 1},
+}
 
 DEFAULT_META = {
     "id": "",
@@ -117,9 +122,32 @@ class Nag:
         Expects a field name string on the stack (e.g. "priority", "created_at").
         Requires `all` first.
 
-        nag all "priority" sort show
+        nag all sort:priority show
         """
-        pass
+        if len(self.s) == 0:
+            print("call sort with no args")
+            exit(1)
+
+        field = self.s.pop()
+
+        if not isinstance(field, str):
+            print("field must be str")
+            exit(1)
+
+        if field not in DEFAULT_META:
+            print(f"unknown sort field: {field}")
+            exit(1)
+
+        order = ORDINAL.get(field, {})
+
+        def sort_key(item):
+            value = item[1][field]
+            return order[value] if value in order else value
+
+        self.m = dict(sorted(self.m.items(), key=sort_key))
+
+        if DEBUG:
+            print("sorted:", self.m)
 
     def fetch(self):
         """Load a single issue by ID
@@ -383,6 +411,9 @@ if __name__ == "__main__":
         for token in pipeline:
             if token in n.t:
                 n.t[token]()
+            elif token.startswith("sort:"):
+                n.s.append(token[len("sort:") :])
+                n.t["sort"]()
             else:
                 n.s.append(token)
 
