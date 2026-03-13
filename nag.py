@@ -62,7 +62,9 @@ class Nag:
             "init": self.init,
             "note": self.note,
             "attach": self.attach,
+            "status": self.status,
         }
+        # TODO: check if ID already exists
         meta["id"] = str(uuid.uuid4())[:4]
 
     def init(self):
@@ -85,6 +87,18 @@ class Nag:
             exit(1)
         print(HELP_MESSAGE)
         exit(0)
+
+    def status(self):
+        """Set the status of the current issue
+
+        nag "open" status save
+        """
+        status = self.s.pop()
+
+        if status not in ["open", "resolved"]:
+            print("status must be open or resolved")
+            exit(1)
+        meta["status"] = status
 
     def attach(self):
         """Add an attachment to the current issue

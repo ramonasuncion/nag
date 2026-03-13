@@ -65,8 +65,6 @@ These are some things that I'm working on right now:
 - [ ] `sort` sort list by field name
 - [ ] `show` print issue list
 - [ ] `graph` print ASCII dependency DAG
-- [ ] `status` set issue status
-- [ ] `attach` copy a file into `attachments/`
 - [ ] `depends` add a dependsency
 - [ ] `close` set status to resolved and save
 - [ ] `sync` scan source files, assign IDs, detect orphans
