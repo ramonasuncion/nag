@@ -41,8 +41,6 @@ DEFAULT_META = {
     "title": "",
     "status": "open",
     "priority": "low",
-    "notes": [],
-    "attachments": [],
     "tags": [],
     "created_at": "",
     "source": "",
@@ -89,6 +87,8 @@ class Nag:
     def _reset_meta(self):
         self.meta = copy.deepcopy(DEFAULT_META)
         self.meta["id"] = self._generate_id()
+        self.notes = []
+        self.attachments = []
 
     def init(self):
         """Initializes the Nag tool"""
@@ -237,7 +237,7 @@ class Nag:
         if not isinstance(attachment, str):
             print("attachment must be str")
             exit(1)
-        self.meta["attachments"].append(attachment)
+        self.attachments.append(attachment)
 
     def note(self):
         """Add a note to the current issue
@@ -249,10 +249,10 @@ class Nag:
         if not isinstance(note, str):
             print("note must be str")
             exit(1)
-        self.meta["notes"].append(note)
+        self.notes.append(note)
 
         if DEBUG:
-            print("notes:", self.meta["notes"])
+            print("notes:", self.notes)
 
     def find_root(self):
         """Walk up from current dir to find todo"""
@@ -334,14 +334,14 @@ class Nag:
         body_path = path + "/body.md"
         if not os.path.exists(body_path):
             with open(body_path, "w") as f:
-                for note in self.meta["notes"]:
+                for note in self.notes:
                     f.write(note + "\n")
 
         attachments_path = path + "/attachments"
         if not os.path.exists(attachments_path):
             os.makedirs(attachments_path)
 
-        for attachment in self.meta["attachments"]:
+        for attachment in self.attachments:
             shutil.copy(attachment, attachments_path)
             print("copied", attachment)
 
