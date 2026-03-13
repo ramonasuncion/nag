@@ -5,12 +5,6 @@ A postfix stack-based DSL for tracking todo inside a project.
 > [!WARNING]
 > I wouldn't recommend using this in production. I use it for my own personal projects.
 
-```sh
-nag "fix the lexer" new "high" priority save
-```
-
-The language is super basic. There are quote literals and keywords that push and pop from a stack.
-
 ## Install
 
 ```sh
