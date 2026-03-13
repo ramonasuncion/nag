@@ -430,6 +430,20 @@ class Nag:
                 if DEBUG:
                     print(meta)
 
+    def ls(self):
+        """List all issue IDs
+
+        nag ls
+        """
+        entries = os.listdir(self.root + "/todo")
+        for id in entries:
+            print(id)
+
+        if not entries:
+            print("no todos")
+        else:
+            print(f"{len(entries)} todo{'s' if len(entries) != 1 else ''}")
+
     def status(self):
         """Set the status of the current issue
 
