@@ -1,5 +1,5 @@
 .venv/
 __pycache__/
 *.pyc
-sync.md
+docs/sync.md
 todo
