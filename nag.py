@@ -156,6 +156,15 @@ class Nag:
         """
         pass
 
+    def _filter_eq(self, field, value, valid=None):
+        if valid and value not in valid:
+            print(f"{field} must be one of: {', '.join(valid)}")
+            exit(1)
+        self.m = {k: v for k, v in self.m.items() if v[field] == value}
+
+    def _filter_contains(self, field, value):
+        self.m = {k: v for k, v in self.m.items() if value in v[field]}
+
     def filter(self):
         """Filter loaded issues by a predicate string
 
@@ -163,7 +172,37 @@ class Nag:
 
         nag all "status:open" filter show
         """
-        pass
+        if len(self.s) == 0:
+            print("call filter with no args")
+            exit(1)
+
+        predicate = self.s.pop()
+
+        if not isinstance(predicate, str):
+            print("predicate must be str")
+            exit(1)
+
+        field, sep, value = predicate.partition(":")
+        if not sep:
+            print("unknown predicate:", predicate)
+            exit(1)
+
+        if field == "status":
+            self._filter_eq("status", value, ["open", "resolved", "orphaned"])
+        elif field == "priority":
+            self._filter_eq("priority", value, ["low", "medium", "high"])
+        elif field == "tag":
+            self._filter_contains("tags", value)
+        elif field in ("source", "blocks", "depends", "title", "id"):
+            self._filter_contains(field, value)
+        elif field in ("created_at", "updated_at"):
+            self._filter_eq(field, value)
+        else:
+            print("unknown predicate:", predicate)
+            exit(1)
+
+        if DEBUG:
+            print("filtered:", self.m)
 
     def show(self):
         """Print the loaded issue list
@@ -178,6 +217,9 @@ class Nag:
             return datetime.datetime.fromisoformat(s).strftime("%Y-%m-%d %H:%M")
 
         issues = list(self.m.values())
+        if not issues:
+            return
+
         col_widths = [
             max(len(m["id"]) for m in issues),
             max(len(m["title"]) for m in issues),
@@ -429,7 +471,11 @@ if __name__ == "__main__":
 
     n.root = n.find_root() or ""
 
-    for pipeline in pipelines:
+    for i, pipeline in enumerate(pipelines):
+        if len(pipelines) > 1:
+            if i > 0:
+                print()
+            print(f"query {i + 1}:")
         needs_root = any(t in n.t and t not in {"init", "help"} for t in pipeline)
         if needs_root and not n.root:
             print("not a nag project")
@@ -437,10 +483,18 @@ if __name__ == "__main__":
 
         for token in pipeline:
             if token in n.t:
+                if DEBUG:
+                    print("Call token:", token)
                 n.t[token]()
             elif token.startswith("sort:"):
+                if DEBUG:
+                    print("Sort token:", token)
                 n.s.append(token[len("sort:") :])
                 n.t["sort"]()
+            elif ":" in token and token[: token.index(":")] in DEFAULT_META:
+                if DEBUG:
+                    print("Append token:", token)
+                n.s.append(token)
             else:
                 n.s.append(token)
 
