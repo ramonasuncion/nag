@@ -6,35 +6,37 @@ import uuid
 import datetime
 import json
 import shutil
-
-"""
-
-Filters
-
-"status:open"
-"status:orphaned"
-"priority:high"
-"tag:codegen"
-"source:codegen.ml"
-"blocked" (if depends_on is not empty and at least one dependency is not resolved)
-
-"""
+import copy
 
 DEBUG = True
 
 IGNORED_DIRS = {".git", "todo", "_build", "_opam"}
 
-HELP_MESSAGE = """Usage: nag [args...]
+HELP_MESSAGE = """Usage: nag [token ...]
 
 Commands:
+  init      nag init
   new       nag "<title>" new
   tag       nag ... "<tag>" tag
   priority  nag ... <low|medium|high> priority
+  status    nag ... <open|resolved> status
+  note      nag ... "<text>" note
+  attach    nag ... "<file>" attach
+  depends   nag ... "<id>" depends
   save      nag ... save
+  close     nag "<id>" fetch close
+  fetch     nag "<id>" fetch
+  ls        nag ls
+  all       nag all
+  filter    nag all "<field:value>" filter
+  sort      nag all "<field>" sort
+  show      nag all show
+  graph     nag all graph
+  sync      nag sync
   help      nag help
 """
 
-meta = {
+DEFAULT_META = {
     "id": "",
     "title": "",
     "status": "open",
@@ -75,8 +77,18 @@ class Nag:
             "sync": self.sync,
         }
         self.m = {}
-        # TODO: check if ID already exists
-        meta["id"] = str(uuid.uuid4())[:4]
+        self._reset_meta()
+
+    def _generate_id(self):
+        """Generate a unique 4-char issue ID"""
+        while True:
+            candidate = str(uuid.uuid4())[:4]
+            if not self.root or not os.path.exists(self.root + "/todo/" + candidate):
+                return candidate
+
+    def _reset_meta(self):
+        self.meta = copy.deepcopy(DEFAULT_META)
+        self.meta["id"] = self._generate_id()
 
     def init(self):
         """Initializes the Nag tool"""
@@ -182,11 +194,11 @@ class Nag:
             print("id must be str")
             exit(1)
 
-        meta["status"] = "resolved"
-        meta["updated_at"] = str(datetime.datetime.now())
+        self.meta["status"] = "resolved"
+        self.meta["updated_at"] = str(datetime.datetime.now())
 
         with open(self.root + "/todo/" + id + "/meta.json", "w") as f:
-            f.write(json.dumps(meta))
+            f.write(json.dumps(self.meta))
 
         print("closed issue")
 
@@ -213,7 +225,7 @@ class Nag:
         if status not in ["open", "resolved"]:
             print("status must be open or resolved")
             exit(1)
-        meta["status"] = status
+        self.meta["status"] = status
 
     def attach(self):
         """Add an attachment to the current issue
@@ -225,7 +237,7 @@ class Nag:
         if not isinstance(attachment, str):
             print("attachment must be str")
             exit(1)
-        meta["attachments"].append(attachment)
+        self.meta["attachments"].append(attachment)
 
     def note(self):
         """Add a note to the current issue
@@ -237,10 +249,10 @@ class Nag:
         if not isinstance(note, str):
             print("note must be str")
             exit(1)
-        meta["notes"].append(note)
+        self.meta["notes"].append(note)
 
         if DEBUG:
-            print("notes:", meta["notes"])
+            print("notes:", self.meta["notes"])
 
     def find_root(self):
         """Walk up from current dir to find todo"""
@@ -266,13 +278,13 @@ class Nag:
             if not isinstance(tag, str):
                 print("tag must be str")
                 exit(1)
-            if tag not in meta["tags"]:
-                meta["tags"].append(tag)
+            if tag not in self.meta["tags"]:
+                self.meta["tags"].append(tag)
             if len(self.s) == 0 or self.s[0] != "tag":
                 break
 
         if DEBUG:
-            print("tags:", meta["tags"])
+            print("tags:", self.meta["tags"])
 
     def priority(self):
         """Set the priority of the current issue
@@ -284,10 +296,10 @@ class Nag:
         if p not in ["low", "medium", "high"]:
             print("priority must be low, medium, or high")
             exit(1)
-        meta["priority"] = p
+        self.meta["priority"] = p
 
         if DEBUG:
-            print("priority:", meta["priority"])
+            print("priority:", self.meta["priority"])
 
     def new(self):
         """Create a new issue
@@ -298,43 +310,58 @@ class Nag:
         if not isinstance(title, str):
             print("title must be str")
             exit(1)
-        meta["title"] = title
-        meta["status"] = "open"
+        self.meta["title"] = title
+        self.meta["status"] = "open"
 
         if DEBUG:
-            print("title:", meta["title"])
+            print("title:", self.meta["title"])
 
     def save(self):
         """Save current issue
 
         nag "fix the lexer" new save
         """
-        path = self.root + "/todo/" + meta["id"]
+        path = self.root + "/todo/" + self.meta["id"]
         if not os.path.exists(path):
             os.makedirs(path)
 
-        meta["created_at"] = str(datetime.datetime.now())
-        meta["updated_at"] = str(datetime.datetime.now())
+        self.meta["created_at"] = str(datetime.datetime.now())
+        self.meta["updated_at"] = str(datetime.datetime.now())
 
         with open(path + "/meta.json", "w") as f:
-            f.write(json.dumps(meta))
+            f.write(json.dumps(self.meta))
 
         body_path = path + "/body.md"
         if not os.path.exists(body_path):
             with open(body_path, "w") as f:
-                for note in meta["notes"]:
+                for note in self.meta["notes"]:
                     f.write(note + "\n")
 
         attachments_path = path + "/attachments"
         if not os.path.exists(attachments_path):
             os.makedirs(attachments_path)
 
-        for attachment in meta["attachments"]:
+        for attachment in self.meta["attachments"]:
             shutil.copy(attachment, attachments_path)
             print("copied", attachment)
 
         print("saved issue")
-        exit(0)
+
+
+def split_pipelines(tokens):
+    pipelines, current = [], []
+    for token in tokens:
+        parts = token.split("+")
+        for i, part in enumerate(parts):
+            if part:
+                current.append(part)
+            if i < len(parts) - 1:
+                if current:
+                    pipelines.append(current)
+                current = []
+    if current:
+        pipelines.append(current)
+    return pipelines
 
 
 if __name__ == "__main__":
@@ -342,18 +369,18 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         print(HELP_MESSAGE)
         exit(0)
-    else:
-        tokens = sys.argv[1:]
 
-        needs_root = not any(token in ["init", "help"] for token in tokens)
-        if needs_root:
-            root = n.find_root()
-            if root is None:
-                print("not a nag project")
-                exit(1)
-            n.root = root
+    pipelines = split_pipelines(sys.argv[1:])
 
-        for token in tokens:
+    n.root = n.find_root() or ""
+
+    for pipeline in pipelines:
+        needs_root = any(t in n.t and t not in {"init", "help"} for t in pipeline)
+        if needs_root and not n.root:
+            print("not a nag project")
+            exit(1)
+
+        for token in pipeline:
             if token in n.t:
                 n.t[token]()
             else:
@@ -362,3 +389,6 @@ if __name__ == "__main__":
         if n.s:
             print("unknown command:", *n.s)
             exit(1)
+
+        n._reset_meta()
+        n.s.clear()
