@@ -65,6 +65,7 @@ class Nag:
             "status": self.status,
             "ls": self.ls,
             "all": self.all,
+            "close": self.close,
         }
         self.m = {}
         # TODO: check if ID already exists
@@ -104,10 +105,34 @@ class Nag:
         if count == 0:
             print("no issues")
 
+    def close(self):
+        """Set status to resolved and save
+
+        nag "fix the lexer" new close
+        """
+        # TODO: update fetched issues
+        if len(self.s) == 0:
+            print("call close with no args")
+            exit(1)
+
+        id = self.s.pop()
+
+        if not isinstance(id, str):
+            print("id must be str")
+            exit(1)
+
+        meta["status"] = "resolved"
+        meta["updated_at"] = str(datetime.datetime.now())
+
+        with open(self.root + "/todo/" + id + "/meta.json", "w") as f:
+            f.write(json.dumps(meta))
+
+        print("closed issue")
+
     def all(self):
         """Load all issue objects
 
-        nag all ... [filter ...] [sort ...] [show ...]
+        nag all "status:open" filter "priority:high" filter show
         """
         for id in os.listdir(self.root + "/todo"):
             path = self.root + "/todo/" + id
