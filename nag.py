@@ -170,7 +170,34 @@ class Nag:
 
         nag all show
         """
-        pass
+        # generated with ChatGPT
+
+        def fmt_date(s):
+            if not s:
+                return ""
+            return datetime.datetime.fromisoformat(s).strftime("%Y-%m-%d %H:%M")
+
+        issues = list(self.m.values())
+        col_widths = [
+            max(len(m["id"]) for m in issues),
+            max(len(m["title"]) for m in issues),
+            max(len(m["status"]) for m in issues),
+            max(len(m["priority"]) for m in issues),
+            max(len(fmt_date(m["created_at"])) for m in issues),
+        ]
+
+        for meta in issues:
+            extras = meta["tags"] + meta["depends"] + meta["blocks"]
+            if meta["source"]:
+                extras.append(meta["source"])
+            parts = [
+                meta["id"].ljust(col_widths[0]),
+                meta["title"].ljust(col_widths[1]),
+                meta["status"].ljust(col_widths[2]),
+                meta["priority"].ljust(col_widths[3]),
+                fmt_date(meta["created_at"]).ljust(col_widths[4]),
+            ] + extras
+            print("  ".join(parts).rstrip())
 
     def graph(self):
         """Print an ASCII dependency DAG of loaded issues
