@@ -2,7 +2,8 @@
 
 A postfix stack-based DSL for tracking issues inside a project.
 
-> WARNING: I wouldn't recommend using this in production. I use it for my own personal projects.
+> [!WARNING]
+> I wouldn't recommend using this in production. I use it for my own personal projects.
 
 ```sh
 nag "fix the lexer" new "high" priority save
@@ -14,7 +15,8 @@ The language is super basic. There are quote literals and keywords that push and
 
 If you run `nag init` it creates a `.issues/` directory. Once you `save`, the tool creates an issue directory for each ID in your source files.
 
-> NOTE: The tool walks up the current directory until it finds a `.issues/` directory.
+> [!NOTE]
+> The tool walks up the current directory until it finds a `.issues/` directory.
 
 ```
 .issues/
