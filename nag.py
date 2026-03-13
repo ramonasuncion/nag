@@ -38,6 +38,7 @@ meta = {
     "title": "",
     "status": "open",
     "priority": "low",
+    "notes": [],
     "tags": [],
     "created_at": "",
     "source": "",
@@ -57,6 +58,7 @@ class Nag:
             "priority": self.priority,
             "help": self.help,
             "init": self.init,
+            "note": self.note,
         }
         meta["id"] = str(uuid.uuid4())[:4]
 
@@ -80,6 +82,21 @@ class Nag:
             exit(1)
         print(HELP_MESSAGE)
         exit(0)
+
+    def note(self):
+        """Add a note to the current issue
+
+        nag "see the dump for the failure case" note save
+        """
+        # TODO: Append notes to existing notes (fetch)
+        note = self.s.pop()
+        if not isinstance(note, str):
+            print("note must be str")
+            exit(1)
+        meta["notes"].append(note)
+
+        if DEBUG:
+            print("notes:", meta["notes"])
 
     def find_root(self):
         """Walk up from current dir to find todo"""
@@ -160,7 +177,9 @@ class Nag:
 
         body_path = path + "/body.md"
         if not os.path.exists(body_path):
-            open(body_path, "w").close()
+            with open(body_path, "w") as f:
+                for note in meta["notes"]:
+                    f.write(note + "\n")
 
         attachments_path = path + "/attachments"
         if not os.path.exists(attachments_path):
