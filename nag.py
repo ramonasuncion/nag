@@ -66,6 +66,13 @@ class Nag:
             "ls": self.ls,
             "all": self.all,
             "close": self.close,
+            "sort": self.sort_list,
+            "fetch": self.fetch,
+            "filter": self.filter,
+            "show": self.show,
+            "graph": self.graph,
+            "depends": self.depends,
+            "sync": self.sync,
         }
         self.m = {}
         # TODO: check if ID already exists
@@ -91,6 +98,60 @@ class Nag:
             exit(1)
         print(HELP_MESSAGE)
         exit(0)
+
+    def sort_list(self):
+        """Sort loaded issues by a field name
+
+        Expects a field name string on the stack (e.g. "priority", "created_at").
+        Requires `all` first.
+
+        nag all "priority" sort show
+        """
+        pass
+
+    def fetch(self):
+        """Load a single issue by ID
+
+        nag "x91b" fetch show
+        """
+        pass
+
+    def filter(self):
+        """Filter loaded issues by a predicate string
+
+        Predicate: "field:value". Requires `all` first.
+
+        nag all "status:open" filter show
+        """
+        pass
+
+    def show(self):
+        """Print the loaded issue list
+
+        nag all show
+        """
+        pass
+
+    def graph(self):
+        """Print an ASCII dependency DAG of loaded issues
+
+        nag all graph
+        """
+        pass
+
+    def depends(self):
+        """Add a dependency to the current issue
+
+        nag "x91b" fetch "y22c" depends save
+        """
+        pass
+
+    def sync(self):
+        """Scan source files, assign IDs to comments, and detect orphans
+
+        nag sync
+        """
+        pass
 
     def ls(self):
         """List all issue IDs
