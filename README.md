@@ -17,24 +17,29 @@ Requires `python3` and either `curl` or `wget`.
 
 | Keyword        | Description                                   |
 | -------------- | --------------------------------------------- |
+| `init`         | Initialize a nag project                      |
 | `new`          | Create a new issue object                     |
 | `tag`          | Add a tag                                     |
 | `priority`     | Set priority (`low`, `medium`, `high`)        |
+| `status`       | Set issue status (`open`, `resolved`)         |
+| `note`         | Append text to `body.md`                      |
+| `attach`       | Copy a file into `attachments/`               |
+| `depends`      | Add a dependency                              |
 | `save`         | Write changes to disk                         |
-| `ls`           | Push all issue IDs from `todo/`               |
-| `all`          | Push all fully loaded issue objects           |
+| `close`        | Set status to resolved and save               |
 | `fetch`        | Load a single issue by ID                     |
+| `ls`           | List all issue IDs                            |
+| `all`          | Load all issues                               |
+| `me`           | Load issues assigned to the current user      |
+| `others`       | Load issues not assigned to the current user  |
+| `pick`         | Assign the fetched issue to the current user  |
 | `filter`       | Filter list by predicate string               |
 | `sort:<field>` | Sort list by field name                       |
 | `show`         | Print issue list                              |
 | `graph`        | Print ASCII dependency DAG                    |
-| `status`       | Set issue status                              |
-| `note`         | Append text to `body.md`                      |
-| `attach`       | Copy a file into `attachments/`               |
-| `depends`      | Add a dependency                              |
-| `close`        | Set status to resolved and save               |
 | `sync`         | Scan source files, assign IDs, detect orphans |
 | `clear`        | Remove TODO IDs from source and delete issues |
+| `help`         | Print help message                            |
 | `+`            | Separate multiple pipelines in one command    |
 
 ## Examples

@@ -47,10 +47,13 @@ Commands:
   fetch     nag "<id>" fetch
   ls        nag ls
   all       nag all
-  filter    nag all "<field:value>" filter
-  sort      nag all sort:<field>
-  show      nag all show
-  graph     nag all graph
+  me        nag me
+  others    nag others
+  pick      nag "<id>" fetch pick
+  filter    nag all|me|others "<field:value>" filter
+  sort      nag all|me|others sort:<field>
+  show      nag all|me|others show
+  graph     nag all|me|others graph
   sync      nag sync
   clear     nag "<id>" fetch clear
   help      nag help
@@ -71,6 +74,7 @@ DEFAULT_META = {
     "source": "",
     "depends": [],
     "blocks": [],
+    "assignee": "",
 }
 
 
@@ -164,6 +168,9 @@ class Nag:
             "depends": self.depends,
             "sync": self.sync,
             "clear": self.clear,
+            "pick": self.pick,
+            "me": self.me,
+            "others": self.others,
         }
         self.reset_meta()
 
@@ -232,6 +239,9 @@ class Nag:
             source_ids.add(new_id)
             modified = True
 
+            # TODO: possible feature to parse assignee from comment e.g. @user
+            assignee = None
+
             rel_path = os.path.relpath(filepath, self.root)
             self._create_issue_from_sync(
                 new_id,
@@ -240,6 +250,7 @@ class Nag:
                 f"{rel_path}:{i + 1}",
                 priority=priority,
                 tags=tags,
+                assignee=assignee,
             )
             print(f"created TODO({new_id}): {title}")
 
@@ -250,7 +261,14 @@ class Nag:
                 f.writelines(lines)
 
     def _create_issue_from_sync(
-        self, issue_id, title, extra_lines, source, priority=None, tags=None
+        self,
+        issue_id,
+        title,
+        extra_lines,
+        source,
+        priority=None,
+        tags=None,
+        assignee=None,
     ):
         issue_dir = os.path.join(self.root, "todo", issue_id)
         if os.path.exists(issue_dir):
@@ -271,6 +289,7 @@ class Nag:
             "source": source,
             "depends": [],
             "blocks": [],
+            "assignee": assignee,
         }
         with open(os.path.join(issue_dir, "meta.json"), "w") as f:
             f.write(json.dumps(m))
@@ -278,6 +297,25 @@ class Nag:
         body = "\n".join(extra_lines)
         with open(os.path.join(issue_dir, "body.md"), "w") as f:
             f.write(body)
+
+    def _read_gitconfig_name(self):
+        """Read the name from the git config file"""
+        path = os.path.expanduser("~/.gitconfig")
+        if not os.path.exists(path):
+            return None
+        # TODO: other sections may have name =
+        with open(path) as f:
+            for line in f:
+                if line.strip().startswith("name ="):
+                    return (
+                        line.split("=")[1]
+                        .strip()
+                        .replace(" ", "")
+                        .replace('"', "")
+                        .replace("'", "")
+                        .lower()
+                    )
+        return None
 
     def init(self):
         """Initializes the Nag tool"""
@@ -303,6 +341,79 @@ class Nag:
             exit(1)
         print(HELP_MESSAGE)
         exit(0)
+
+    def pick(self):
+        """Assign the fetched issue to the current user
+
+        nag "id" fetch pick
+        """
+        if len(self.s) != 0:
+            print("call pick with no args")
+            exit(1)
+
+        if not self.m:
+            print("no todos")
+            exit(1)
+
+        name = self._read_gitconfig_name()
+        if not name:
+            print("no git config name")
+            exit(1)
+
+        self.meta["assignee"] = name
+        self.meta["updated_at"] = str(datetime.datetime.now())
+
+        path = self.root + "/todo/" + self.meta["id"]
+        with open(path + "/meta.json", "w") as f:
+            f.write(json.dumps(self.meta))
+
+        print(f"assigned {self.meta['id']} to {name}")
+
+    def me(self):
+        """Load issues assigned to the current user
+
+        nag me show
+        """
+        if len(self.s) != 0:
+            print("call me with no args")
+            exit(1)
+
+        name = self._read_gitconfig_name()
+        if not name:
+            print("no git config name")
+            exit(1)
+
+        for issue_id in os.listdir(self.root + "/todo"):
+            meta_path = self.root + "/todo/" + issue_id + "/meta.json"
+            if not os.path.isfile(meta_path):
+                continue
+            with open(meta_path) as f:
+                meta = json.load(f)
+            if meta.get("assignee") == name:
+                self.m[issue_id] = meta
+
+    def others(self):
+        """Load issues not assigned to the current user
+
+        nag others show
+        """
+        if len(self.s) != 0:
+            print("call others with no args")
+            exit(1)
+
+        name = self._read_gitconfig_name()
+        if not name:
+            print("no git config name")
+            exit(1)
+
+        for issue_id in os.listdir(self.root + "/todo"):
+            meta_path = self.root + "/todo/" + issue_id + "/meta.json"
+            if not os.path.isfile(meta_path):
+                continue
+            with open(meta_path) as f:
+                meta = json.load(f)
+            if meta.get("assignee") != name:
+                self.m[issue_id] = meta
 
     def sort_list(self):
         """Sort loaded issues by a field name
@@ -440,6 +551,8 @@ class Nag:
             extras = meta["tags"] + meta["depends"] + meta["blocks"]
             if meta["source"]:
                 extras.append(meta["source"])
+            if meta.get("assignee"):
+                extras.append(meta["assignee"])
             parts = [
                 meta["id"].ljust(col_widths[0]),
                 meta["title"].ljust(col_widths[1]),
